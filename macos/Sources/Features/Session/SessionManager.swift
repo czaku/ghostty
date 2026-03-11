@@ -36,26 +36,34 @@ final class SessionManager {
     static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "SessionManager")
 
     private static let maxScrollbackLines = 10_000
+    /// Sessions older than this are pruned when a new session is saved.
+    private static let sessionRetentionDays: Double = 30
 
     private var periodicSaveTimer: Timer?
 
-    // ~/.../Application Support/ghostty/sessions/
+    /// Root of this app's Application Support directory, keyed by bundle ID so
+    /// production Ghostty and the czaku fork never share state.
+    private var appSupportURL: URL {
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.czaku.ghostty"
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first!
+            .appendingPathComponent(bundleID, isDirectory: true)
+    }
+
+    // ~/.../Application Support/<bundleID>/sessions/
     var sessionsURL: URL {
-        let stateDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        return stateDir.appendingPathComponent("Application Support/ghostty/sessions", isDirectory: true)
+        appSupportURL.appendingPathComponent("sessions", isDirectory: true)
     }
 
-    // ~/.../Application Support/ghostty/current-session.json
+    // ~/.../Application Support/<bundleID>/current-session.json
     var currentSessionURL: URL {
-        let stateDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        return stateDir.appendingPathComponent("Application Support/ghostty/current-session.json")
+        appSupportURL.appendingPathComponent("current-session.json")
     }
 
-    // ~/.../Application Support/ghostty/restore-pending.json
+    // ~/.../Application Support/<bundleID>/restore-pending.json
     // Written by `ghostty +restore-session` to trigger a restore on next launch.
     var pendingRestoreURL: URL {
-        let stateDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        return stateDir.appendingPathComponent("Application Support/ghostty/restore-pending.json")
+        appSupportURL.appendingPathComponent("restore-pending.json")
     }
 
     /// If a pending restore file exists, loads and returns the session, then deletes the marker.
@@ -89,8 +97,24 @@ final class SessionManager {
             let encoded = try encoder.encode(data)
             try encoded.write(to: url, options: .atomic)
             Self.logger.info("Session saved to \(url.path)")
+            pruneOldSessions()
         } catch {
             Self.logger.error("Failed to save session: \(error)")
+        }
+    }
+
+    /// Deletes session files older than `sessionRetentionDays`, keeping at least one.
+    private func pruneOldSessions() {
+        let cutoff = Date().addingTimeInterval(-Self.sessionRetentionDays * 86400)
+        let all = listSessions()
+        guard all.count > 1 else { return }
+        for entry in all.dropLast(1) {
+            guard let modified = (try? entry.url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate,
+                  modified < cutoff
+            else { continue }
+            try? FileManager.default.removeItem(at: entry.url)
+            Self.logger.info("Pruned old session: \(entry.url.lastPathComponent)")
         }
     }
 

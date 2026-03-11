@@ -2217,14 +2217,35 @@ keybind: Keybinds = .{},
 /// This is currently only supported on macOS. This has no effect on Linux.
 @"window-save-state": WindowSaveState = .default,
 
-/// Automatically save the session periodically and on quit/window close.
-/// Saved sessions can be restored via File > Restore Session.
-/// This is currently only supported on macOS.
-@"session-auto-save": bool = true,
+/// Automatically save the session on quit and window close, and periodically
+/// while Ghostty is running.
+///
+/// When enabled, Ghostty records the open windows, working directories,
+/// titles, and recent scrollback for each terminal surface. Saved sessions
+/// can be restored later via File > Restore Session or File > Restore Last
+/// Session in the menu, or with the `ghostty +restore-session` CLI command.
+///
+/// Session files are stored in the application support directory under
+/// `sessions/` and named by the time they were saved. Files older than 30
+/// days are pruned automatically whenever a new session is saved.
+///
+/// To disable automatic saving, set this to `false`. You can still trigger
+/// a manual save at any time via File > Save Session (⌘⇧S).
+///
+/// This is currently only supported on macOS. Setting this on other
+/// platforms has no effect.
+///
+/// The default value is `false`.
+@"session-auto-save": bool = false,
 
-/// How often (in seconds) to auto-save the session when `session-auto-save` is
-/// enabled. Minimum value is 30. Default is 300 (5 minutes).
-/// This is currently only supported on macOS.
+/// How often (in seconds) to auto-save the session when `session-auto-save`
+/// is enabled. The minimum accepted value is 30 seconds. Values below 30
+/// are clamped to 30.
+///
+/// This is currently only supported on macOS. Setting this on other
+/// platforms has no effect.
+///
+/// The default value is `300` (5 minutes).
 @"session-auto-save-interval": u32 = 300,
 
 /// Resize the window in discrete increments of the focused surface's cell size.

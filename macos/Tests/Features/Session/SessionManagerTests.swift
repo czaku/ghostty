@@ -140,7 +140,7 @@ struct SessionManagerLoadTests {
 
 // MARK: - SessionManager crash recovery
 
-@Suite("SessionManager crash recovery")
+@Suite("SessionManager crash recovery", .serialized)
 struct SessionManagerCrashRecoveryTests {
 
     private func writeCurrentSession() throws -> URL {
@@ -178,7 +178,7 @@ struct SessionManagerCrashRecoveryTests {
 
 // MARK: - SessionManager pending restore (CLI integration)
 
-@Suite("SessionManager pending restore")
+@Suite("SessionManager pending restore", .serialized)
 struct SessionManagerPendingRestoreTests {
 
     private func writePendingRestore(pointing sessionURL: URL) throws {
