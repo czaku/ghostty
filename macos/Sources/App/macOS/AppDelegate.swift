@@ -37,6 +37,10 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuCloseWindow: NSMenuItem?
     @IBOutlet private var menuCloseAllWindows: NSMenuItem?
 
+    @IBOutlet private var menuSaveSession: NSMenuItem?
+    @IBOutlet private var menuRestoreLastSession: NSMenuItem?
+    @IBOutlet private var menuRestoreSession: NSMenuItem?
+
     @IBOutlet private var menuUndo: NSMenuItem?
     @IBOutlet private var menuRedo: NSMenuItem?
     @IBOutlet private var menuCopy: NSMenuItem?
@@ -346,6 +350,18 @@ class AppDelegate: NSObject,
                 _ = TerminalController.newWindow(ghostty)
                 undoManager.enableUndoRegistration()
             }
+
+            // Check for a pending restore triggered by `ghostty +restore-session`.
+            if let session = SessionManager.shared.consumePendingRestore() {
+                DispatchQueue.main.async {
+                    SessionManager.shared.restoreSession(session, ghostty: self.ghostty)
+                }
+            }
+
+            // Check for a crash recovery session from the previous run.
+            if SessionManager.shared.crashRecoverySessionExists() {
+                DispatchQueue.main.async { self.offerCrashRecovery() }
+            }
         }
     }
 
@@ -416,6 +432,14 @@ class AppDelegate: NSObject,
         // so remove them all now. In the future we may want to be
         // more selective and only remove surface-targeted notifications.
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+
+        // Save the session on clean exit and clean up the crash recovery file.
+        let controllers = TerminalController.all
+        if !controllers.isEmpty {
+            SessionManager.shared.saveSession(controllers: controllers)
+        }
+        SessionManager.shared.stopPeriodicSave()
+        SessionManager.shared.clearCrashRecovery()
     }
 
     /// This is called when the application is already open and someone double-clicks the icon
@@ -922,6 +946,13 @@ class AppDelegate: NSObject,
             NSApp.setActivationPolicy(.accessory)
         }
 
+        // Update the periodic session save interval.
+        if config.sessionAutoSave {
+            SessionManager.shared.startPeriodicSave(interval: TimeInterval(config.sessionAutoSaveInterval))
+        } else {
+            SessionManager.shared.stopPeriodicSave()
+        }
+
         // If we have configuration errors, we need to show them.
         let c = ConfigurationErrorsController.sharedInstance
         c.errors = config.errors
@@ -1098,6 +1129,29 @@ class AppDelegate: NSObject,
         AboutController.shared.hide()
     }
 
+    @IBAction func saveSession(_ sender: Any) {
+        SessionManager.shared.saveSession(controllers: TerminalController.all)
+    }
+
+    @IBAction func restoreLastSession(_ sender: Any) {
+        guard let url = SessionManager.shared.latestSessionURL() else { return }
+        guard let session = try? SessionManager.shared.loadSession(url: url) else { return }
+        SessionManager.shared.restoreSession(session, ghostty: ghostty)
+    }
+
+    @IBAction func restoreSession(_ sender: Any) {
+        let panel = NSOpenPanel()
+        panel.directoryURL = SessionManager.shared.sessionsURL
+        panel.allowedContentTypes = [.json]
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.title = "Restore Session"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let session = try? SessionManager.shared.loadSession(url: url) else { return }
+        SessionManager.shared.restoreSession(session, ghostty: ghostty)
+    }
+
     @IBAction func showAbout(_ sender: Any?) {
         AboutController.shared.show()
     }
@@ -1240,6 +1294,23 @@ extension AppDelegate {
         }
     }
 
+    private func offerCrashRecovery() {
+        let alert = NSAlert()
+        alert.messageText = "Ghostty didn't exit cleanly. Restore previous session?"
+        alert.informativeText = "Your last session was saved automatically before the crash."
+        alert.addButton(withTitle: "Restore")
+        alert.addButton(withTitle: "Dismiss")
+        alert.alertStyle = .informational
+
+        let url = SessionManager.shared.currentSessionURL
+        if alert.runModal() == .alertFirstButtonReturn,
+           let session = try? SessionManager.shared.loadSession(url: url) {
+            SessionManager.shared.restoreSession(session, ghostty: ghostty)
+        }
+        // Always clear the crash recovery file after prompting.
+        SessionManager.shared.clearCrashRecovery()
+    }
+
     @IBAction func setAsDefaultTerminal(_ sender: NSMenuItem) {
         NSWorkspace.shared.setDefaultApplication(at: Bundle.main.bundleURL, toOpen: .unixExecutable) { error in
             guard let error else { return }
@@ -1265,6 +1336,9 @@ extension AppDelegate: NSMenuItemValidation {
         switch item.action {
         case #selector(setAsDefaultTerminal(_:)):
             return NSWorkspace.shared.defaultTerminal != Bundle.main.bundleURL
+
+        case #selector(restoreLastSession(_:)):
+            return SessionManager.shared.latestSessionURL() != nil
 
         case #selector(floatOnTop(_:)),
             #selector(useAsDefault(_:)):

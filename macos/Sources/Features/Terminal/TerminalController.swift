@@ -1122,6 +1122,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     override func windowWillClose(_ notification: Notification) {
         super.windowWillClose(notification)
+
+        // Auto-save this window as a partial session for crash recovery.
+        SessionManager.shared.saveCurrentSession(controllers: [self])
+
         self.relabelTabs()
 
         // If we remove a window, we reset the cascade point to the key window so that

@@ -2217,6 +2217,16 @@ keybind: Keybinds = .{},
 /// This is currently only supported on macOS. This has no effect on Linux.
 @"window-save-state": WindowSaveState = .default,
 
+/// Automatically save the session periodically and on quit/window close.
+/// Saved sessions can be restored via File > Restore Session.
+/// This is currently only supported on macOS.
+@"session-auto-save": bool = true,
+
+/// How often (in seconds) to auto-save the session when `session-auto-save` is
+/// enabled. Minimum value is 30. Default is 300 (5 minutes).
+/// This is currently only supported on macOS.
+@"session-auto-save-interval": u32 = 300,
+
 /// Resize the window in discrete increments of the focused surface's cell size.
 /// If this is disabled, surfaces are resized in pixel increments. Currently
 /// only supported on macOS.

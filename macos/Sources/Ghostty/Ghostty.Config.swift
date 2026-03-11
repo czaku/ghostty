@@ -219,6 +219,22 @@ extension Ghostty {
             return String(cString: ptr)
         }
 
+        var sessionAutoSave: Bool {
+            guard let config = self.config else { return true }
+            var v = true
+            let key = "session-auto-save"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
+
+        var sessionAutoSaveInterval: UInt32 {
+            guard let config = self.config else { return 300 }
+            var v: UInt32 = 300
+            let key = "session-auto-save-interval"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return max(30, v)
+        }
+
         var windowPositionX: Int16? {
             guard let config = self.config else { return nil }
             var v: Int16 = 0

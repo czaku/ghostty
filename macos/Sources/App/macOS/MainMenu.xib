@@ -21,6 +21,9 @@
                 <outlet property="menuCheckForUpdates" destination="GEA-5y-yzH" id="0nV-Tf-nJQ"/>
                 <outlet property="menuClose" destination="DVo-aG-piG" id="R3t-0C-aSU"/>
                 <outlet property="menuCloseAllWindows" destination="yKr-Vi-Yqw" id="Zet-Ir-zbm"/>
+                <outlet property="menuSaveSession" destination="m4K-9P-jXw" id="cD5-kL-nP2"/>
+                <outlet property="menuRestoreLastSession" destination="nR8-vZ-xK5" id="gH9-pR-sT6"/>
+                <outlet property="menuRestoreSession" destination="jK2-tU-wV8" id="kM6-bC-dE3"/>
                 <outlet property="menuCloseTab" destination="Obb-Mk-j8J" id="Gda-L0-gdz"/>
                 <outlet property="menuCloseWindow" destination="W5w-UZ-crk" id="6ff-BT-ENV"/>
                 <outlet property="menuCommandPalette" destination="et6-de-Mh7" id="53t-cu-dm5"/>
@@ -213,6 +216,25 @@
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="closeAllWindows:" target="-1" id="hrz-eb-l5t"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="sS1-Qf-gK4"/>
+                            <menuItem title="Save Session" keyEquivalent="S" id="m4K-9P-jXw">
+                                <modifierMask key="keyEquivalentModifierMask" command="YES" shift="YES"/>
+                                <connections>
+                                    <action selector="saveSession:" target="-1" id="aB3-hQ-rW7"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Restore Last Session" keyEquivalent="T" id="nR8-vZ-xK5">
+                                <modifierMask key="keyEquivalentModifierMask" command="YES" shift="YES"/>
+                                <connections>
+                                    <action selector="restoreLastSession:" target="-1" id="eF7-mN-oQ3"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Restore Session…" id="jK2-tU-wV8">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="restoreSession:" target="-1" id="iL4-xY-zA1"/>
                                 </connections>
                             </menuItem>
                         </items>
