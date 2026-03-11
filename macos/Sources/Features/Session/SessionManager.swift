@@ -27,6 +27,17 @@ struct SessionSurface: Codable {
     let cwd: String?
     let title: String
     let scrollback: String
+    /// Name of the foreground process at save time if it's on the replay whitelist
+    /// (e.g. "claude", "claude-edge", "nvim"). Nil means restore to a bare prompt.
+    let foregroundProcess: String?
+
+    init(uuid: String, cwd: String?, title: String, scrollback: String, foregroundProcess: String? = nil) {
+        self.uuid = uuid
+        self.cwd = cwd
+        self.title = title
+        self.scrollback = scrollback
+        self.foregroundProcess = foregroundProcess
+    }
 }
 
 // MARK: - SessionManager
@@ -44,7 +55,7 @@ final class SessionManager {
     /// Root of this app's Application Support directory, keyed by bundle ID so
     /// production Ghostty and the czaku fork never share state.
     private var appSupportURL: URL {
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.czaku.ghostty"
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.czaku.casper"
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first!
             .appendingPathComponent(bundleID, isDirectory: true)
@@ -209,9 +220,7 @@ final class SessionManager {
 
         var config = Ghostty.SurfaceConfiguration()
         config.workingDirectory = firstSurface.cwd
-        if !firstSurface.scrollback.isEmpty {
-            config.initialInput = makeScrollbackCommand(firstSurface.scrollback)
-        }
+        config.initialInput = initialInput(for: firstSurface)
 
         let controller = TerminalController.newWindow(ghostty, withBaseConfig: config)
 
@@ -219,9 +228,7 @@ final class SessionManager {
         for surface in windowData.surfaces.dropFirst() {
             var tabConfig = Ghostty.SurfaceConfiguration()
             tabConfig.workingDirectory = surface.cwd
-            if !surface.scrollback.isEmpty {
-                tabConfig.initialInput = makeScrollbackCommand(surface.scrollback)
-            }
+            tabConfig.initialInput = initialInput(for: surface)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 NotificationCenter.default.post(
                     name: Ghostty.Notification.ghosttyNewTab,
@@ -237,6 +244,30 @@ final class SessionManager {
             let rect = NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
             window.setFrame(rect, display: true)
         }
+    }
+
+    /// Builds the full `initialInput` string for a surface on restore.
+    ///
+    /// Sequencing:
+    /// 1. If there is scrollback, replay it visually via `cat tmpfile; rm tmpfile`.
+    /// 2. If a replayable foreground process was saved, append its restore command.
+    ///
+    /// For `claude`, the restore command is `claude --continue` which resumes the
+    /// last Claude Code conversation in that directory. For wrappers like
+    /// `claude-edge`, the script is re-run as-is.
+    private func initialInput(for surface: SessionSurface) -> String? {
+        var parts: [String] = []
+
+        if !surface.scrollback.isEmpty {
+            parts.append(makeScrollbackCommand(surface.scrollback))
+        }
+
+        if let proc = surface.foregroundProcess {
+            // Append the replay command followed by a newline so it runs automatically.
+            parts.append(ProcessDetector.restoreCommand(for: proc) + "\n")
+        }
+
+        return parts.isEmpty ? nil : parts.joined()
     }
 
     /// Writes scrollback to a temp file and returns a shell command that cats it.
@@ -267,11 +298,13 @@ final class SessionManager {
 
     private func sessionSurface(from view: Ghostty.SurfaceView) -> SessionSurface? {
         let scrollback = readScrollback(from: view)
+        let foreground = view.pwd.flatMap { ProcessDetector.replayableProcess(inDirectory: $0) }
         return SessionSurface(
             uuid: view.id.uuidString,
             cwd: view.pwd,
             title: view.title,
-            scrollback: scrollback
+            scrollback: scrollback,
+            foregroundProcess: foreground
         )
     }
 
