@@ -263,6 +263,12 @@
                                     <action selector="copy:" target="-1" id="B4F-hg-R4T"/>
                                 </connections>
                             </menuItem>
+                            <menuItem title="Copy as Markdown" keyEquivalent="C" id="cP7-mR-kN3">
+                                <modifierMask key="keyEquivalentModifierMask" command="YES" shift="YES"/>
+                                <connections>
+                                    <action selector="copyAsMarkdown:" target="-1" id="dQ8-nS-lO4"/>
+                                </connections>
+                            </menuItem>
                             <menuItem title="Paste" id="i27-pK-umN">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>

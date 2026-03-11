@@ -1527,6 +1527,21 @@ extension Ghostty {
             }
         }
 
+        /// Copies the current selection wrapped in a fenced markdown code block.
+        /// Paste directly into Claude, ChatGPT, or any markdown field.
+        @IBAction func copyAsMarkdown(_ sender: Any?) {
+            guard let surface = self.surface else { return }
+            // Trigger a regular copy first so the Ghostty engine writes the
+            // selection to NSPasteboard.general.
+            let action = "copy_to_clipboard"
+            if ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
+                // Now read what was placed on the clipboard and wrap it.
+                if let text = NSPasteboard.general.string(forType: .string) {
+                    CasperClipboard.copyAsMarkdown(text)
+                }
+            }
+        }
+
         @IBAction func paste(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "paste_from_clipboard"

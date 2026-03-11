@@ -11,7 +11,7 @@ const log = std.log.scoped(.config);
 pub fn defaultXdgPath(alloc: Allocator) ![]const u8 {
     return try internal_os.xdg.config(
         alloc,
-        .{ .subdir = "czaku-ghostty/config.ghostty" },
+        .{ .subdir = "casper/config.ghostty" },
     );
 }
 
@@ -20,7 +20,7 @@ pub fn defaultXdgPath(alloc: Allocator) ![]const u8 {
 pub fn legacyDefaultXdgPath(alloc: Allocator) ![]const u8 {
     return try internal_os.xdg.config(
         alloc,
-        .{ .subdir = "czaku-ghostty/config" },
+        .{ .subdir = "casper/config" },
     );
 }
 

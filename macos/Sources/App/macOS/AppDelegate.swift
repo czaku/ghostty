@@ -716,6 +716,15 @@ class AppDelegate: NSObject,
     }
 
     private func localEventKeyDown(_ event: NSEvent) -> NSEvent? {
+        // Strip markdown code fences from the clipboard on ⌘V so AI-generated
+        // commands paste cleanly without the opening/closing ``` lines.
+        // This runs before the event reaches Ghostty's keybind system, which
+        // reads NSPasteboard.general immediately after.
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers == "v" {
+            CasperClipboard.stripCodeFencesIfNeeded()
+        }
+
         // If the tab overview is visible and escape is pressed, close it.
         // This can't POSSIBLY be right and is probably a FirstResponder problem
         // that we should handle elsewhere in our program. But this works and it
