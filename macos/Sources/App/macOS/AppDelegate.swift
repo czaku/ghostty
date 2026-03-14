@@ -38,8 +38,14 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuCloseAllWindows: NSMenuItem?
 
     @IBOutlet private var menuSaveSession: NSMenuItem?
+    @IBOutlet private var menuSaveSessionAs: NSMenuItem?
     @IBOutlet private var menuRestoreLastSession: NSMenuItem?
     @IBOutlet private var menuRestoreSession: NSMenuItem?
+    @IBOutlet private var menuSessionBrowser: NSMenuItem?
+
+    @IBOutlet private var menuAskAI: NSMenuItem?
+    @IBOutlet private var menuSaveLayout: NSMenuItem?
+    @IBOutlet private var menuLayouts: NSMenuItem?
 
     @IBOutlet private var menuUndo: NSMenuItem?
     @IBOutlet private var menuRedo: NSMenuItem?
@@ -222,6 +228,31 @@ class AppDelegate: NSObject,
             matching: [.keyDown],
             handler: localEventHandler)
 
+        // ⌘+click handler: detect file:line references in terminal surfaces
+        // and open them in the configured editor.
+        _ = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+            guard let self else { return event }
+            let editor = self.ghostty.config.openInEditor
+            if FileLinkHandler.handleMouseDown(event, editor: editor) { return nil }
+            return event
+        }
+
+        // Terminal editor notification: open a new Casper window running nvim/vim.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(casperOpenInTerminalEditor(_:)),
+            name: .casperOpenInTerminalEditor,
+            object: nil
+        )
+
+        // Action bar "Save Session" button
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(casperSaveSessionFromBar),
+            name: .casperSaveSession,
+            object: nil
+        )
+
         // Notifications
         NotificationCenter.default.addObserver(
             self,
@@ -304,6 +335,18 @@ class AppDelegate: NSObject,
         // Setup signal handlers
         setupSignals()
 
+        // Start the fed integration server so Casper appears in the fed dashboard.
+        CasperFedServer.shared.start()
+
+        // Start polling terminal panes for activity state (waiting/executing/idle).
+        PaneActivityMonitor.shared.start()
+
+        // Request notification permission for "waiting for input" alerts.
+        NotificationManager.shared.requestPermission()
+
+        // Restore saved app icon (Wraith/Phantom/Specter).
+        CasperThemeManager.shared.restoreAppIcon()
+
         switch Ghostty.launchSource {
         case .app:
             // Don't have to do anything.
@@ -362,6 +405,20 @@ class AppDelegate: NSObject,
             if SessionManager.shared.crashRecoverySessionExists() {
                 DispatchQueue.main.async { self.offerCrashRecovery() }
             }
+
+            // Offer to migrate existing Ghostty config on first Casper launch.
+            DispatchQueue.main.async { self.offerGhosttyConfigMigrationIfNeeded() }
+
+            // Restore startup layout if configured.
+            let startupLayout = self.ghostty.config.startupLayout
+            if !startupLayout.isEmpty {
+                let layouts = LayoutManager.shared.listLayouts()
+                if let layout = layouts.first(where: { $0.name == startupLayout }) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        LayoutManager.shared.restoreLayout(layout, ghostty: self.ghostty)
+                    }
+                }
+            }
         }
     }
 
@@ -413,9 +470,9 @@ class AppDelegate: NSObject,
 
         // We have some visible window. Show an app-wide modal to confirm quitting.
         let alert = NSAlert()
-        alert.messageText = "Quit Ghostty?"
+        alert.messageText = "Quit Casper?"
         alert.informativeText = "All terminal sessions will be terminated."
-        alert.addButton(withTitle: "Close Ghostty")
+        alert.addButton(withTitle: "Close Casper")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
         switch alert.runModal() {
@@ -440,6 +497,8 @@ class AppDelegate: NSObject,
         }
         SessionManager.shared.stopPeriodicSave()
         SessionManager.shared.clearCrashRecovery()
+        PaneActivityMonitor.shared.stop()
+        CasperFedServer.shared.stop()
     }
 
     /// This is called when the application is already open and someone double-clicks the icon
@@ -514,7 +573,7 @@ class AppDelegate: NSObject,
             // may want to show this as a sheet on the focused window (especially if we're
             // opening a tab). I'm not sure.
             let alert = NSAlert()
-            alert.messageText = "Allow Ghostty to execute \"\(filename)\"?"
+            alert.messageText = "Allow Casper to execute \"\(filename)\"?"
             alert.addButton(withTitle: "Allow")
             alert.addButton(withTitle: "Cancel")
             alert.alertStyle = .warning
@@ -721,7 +780,8 @@ class AppDelegate: NSObject,
         // This runs before the event reaches Ghostty's keybind system, which
         // reads NSPasteboard.general immediately after.
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-           event.charactersIgnoringModifiers == "v" {
+           event.charactersIgnoringModifiers == "v",
+           ghostty.config.stripCodeFences {
             CasperClipboard.stripCodeFencesIfNeeded()
         }
 
@@ -735,6 +795,16 @@ class AppDelegate: NSObject,
            tabGroup.isOverviewVisible {
             window.toggleTabOverview(nil)
             return nil
+        }
+
+        // Broadcast mode: forward the key event to all non-focused panes in the same window.
+        // We do this before the mainWindow guard so it fires even when a terminal has focus.
+        if let controller = TerminalController.all.first(where: { $0.window?.isKeyWindow == true }),
+           controller.broadcastMode,
+           let focused = controller.focusedSurface {
+            for surface in controller.surfaceTree where surface !== focused {
+                surface.keyDown(with: event)
+            }
         }
 
         // If we have a main window then we don't process any of the keys
@@ -937,6 +1007,7 @@ class AppDelegate: NSObject,
         // Config could change keybindings, so update everything that depends on that
         syncMenuShortcuts(config)
         TerminalController.all.forEach { $0.relabelTabs() }
+        rebuildLayoutsMenu()
 
         // Update our badge since config can change what we show.
         syncDockBadge()
@@ -961,6 +1032,10 @@ class AppDelegate: NSObject,
         } else {
             SessionManager.shared.stopPeriodicSave()
         }
+
+        // Keep SessionManager in sync with the latest config so it can read
+        // sessionMaxScrollback, sessionRetentionDays, and sessionReplayCommands.
+        SessionManager.shared.config = config
 
         // If we have configuration errors, we need to show them.
         let c = ConfigurationErrorsController.sharedInstance
@@ -1142,6 +1217,31 @@ class AppDelegate: NSObject,
         SessionManager.shared.saveSession(controllers: TerminalController.all)
     }
 
+    @objc private func casperSaveSessionFromBar() {
+        SessionManager.shared.saveSession(controllers: TerminalController.all)
+    }
+
+    @IBAction func saveSessionAs(_ sender: Any) {
+        let alert = NSAlert()
+        alert.messageText = "Save Session As"
+        alert.informativeText = "Enter a name for this session."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        input.placeholderString = "e.g. edge-trading, vibe-sprint"
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        SessionManager.shared.saveSession(controllers: TerminalController.all, named: name.isEmpty ? nil : name)
+    }
+
+    @IBAction func showSessionBrowser(_ sender: Any) {
+        SessionBrowserController.shared.show(ghostty: ghostty)
+    }
+
     @IBAction func restoreLastSession(_ sender: Any) {
         guard let url = SessionManager.shared.latestSessionURL() else { return }
         guard let session = try? SessionManager.shared.loadSession(url: url) else { return }
@@ -1159,6 +1259,82 @@ class AppDelegate: NSObject,
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let session = try? SessionManager.shared.loadSession(url: url) else { return }
         SessionManager.shared.restoreSession(session, ghostty: ghostty)
+    }
+
+    // MARK: - Ask AI
+
+    @IBAction func askAI(_ sender: Any) {
+        AskAIAction.run(ghostty: ghostty, config: ghostty.config)
+    }
+
+    // MARK: - Layouts
+
+    @IBAction func saveLayout(_ sender: Any) {
+        let alert = NSAlert()
+        alert.messageText = "Save Layout"
+        alert.informativeText = "Enter a name for this layout. Each window will be saved with its current size, position, and section name."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = "e.g. Work, Edge, Runecode"
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        LayoutManager.shared.saveLayout(name: name, controllers: TerminalController.all)
+        rebuildLayoutsMenu()
+    }
+
+    @objc private func restoreLayoutFromMenu(_ sender: NSMenuItem) {
+        let name = sender.title
+        let layouts = LayoutManager.shared.listLayouts()
+        guard let layout = layouts.first(where: { $0.name == name }) else { return }
+        LayoutManager.shared.restoreLayout(layout, ghostty: ghostty)
+    }
+
+    /// Rebuilds the Layouts submenu from the saved layout files.
+    func rebuildLayoutsMenu() {
+        guard let submenu = menuLayouts?.submenu else { return }
+
+        // Keep the static items at the top (Save Layout, separator)
+        let staticCount = 2
+        while submenu.items.count > staticCount {
+            submenu.removeItem(at: staticCount)
+        }
+
+        let layouts = LayoutManager.shared.listLayouts()
+        if layouts.isEmpty {
+            let empty = NSMenuItem(title: "No Saved Layouts", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            submenu.addItem(empty)
+        } else {
+            for layout in layouts {
+                let item = NSMenuItem(
+                    title: layout.name,
+                    action: #selector(restoreLayoutFromMenu(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                submenu.addItem(item)
+            }
+        }
+    }
+
+    // MARK: - Terminal editor
+
+    @objc private func casperOpenInTerminalEditor(_ notification: Notification) {
+        guard let info = notification.userInfo,
+              let editor = info["editor"] as? String,
+              let path = info["path"] as? String,
+              let line = info["line"] as? Int
+        else { return }
+        var config = Ghostty.SurfaceConfiguration()
+        config.initialInput = "\(editor) +\(line) \(path)\n"
+        _ = TerminalController.newWindow(ghostty, withBaseConfig: config)
     }
 
     @IBAction func showAbout(_ sender: Any?) {
@@ -1305,7 +1481,7 @@ extension AppDelegate {
 
     private func offerCrashRecovery() {
         let alert = NSAlert()
-        alert.messageText = "Ghostty didn't exit cleanly. Restore previous session?"
+        alert.messageText = "Casper didn't exit cleanly. Restore previous session?"
         alert.informativeText = "Your last session was saved automatically before the crash."
         alert.addButton(withTitle: "Restore")
         alert.addButton(withTitle: "Dismiss")
@@ -1320,6 +1496,46 @@ extension AppDelegate {
         SessionManager.shared.clearCrashRecovery()
     }
 
+    private func offerGhosttyConfigMigrationIfNeeded() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let ghosttyConfig = "\(home)/.config/ghostty/config"
+        let casperConfig = "\(home)/.config/casper/config.casper"
+
+        // Only offer if Ghostty config exists and Casper config does not.
+        guard FileManager.default.fileExists(atPath: ghosttyConfig),
+              !FileManager.default.fileExists(atPath: casperConfig)
+        else { return }
+
+        // Only offer once (mark as seen regardless of user choice).
+        let seenKey = "casperMigrationOffered"
+        guard !UserDefaults.standard.bool(forKey: seenKey) else { return }
+        UserDefaults.standard.set(true, forKey: seenKey)
+
+        let alert = NSAlert()
+        alert.messageText = "Import Ghostty Config?"
+        alert.informativeText = "Casper found an existing Ghostty config at ~/.config/ghostty/config. Copy it to ~/.config/casper/config.casper to reuse your settings?"
+        alert.addButton(withTitle: "Copy Config")
+        alert.addButton(withTitle: "Skip")
+        alert.alertStyle = .informational
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            let casperDir = URL(fileURLWithPath: casperConfig).deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: casperDir, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(
+                atPath: ghosttyConfig,
+                toPath: casperConfig
+            )
+            ghostty.reloadConfig()
+        } catch {
+            let errAlert = NSAlert()
+            errAlert.messageText = "Config Copy Failed"
+            errAlert.informativeText = error.localizedDescription
+            errAlert.runModal()
+        }
+    }
+
     @IBAction func setAsDefaultTerminal(_ sender: NSMenuItem) {
         NSWorkspace.shared.setDefaultApplication(at: Bundle.main.bundleURL, toOpen: .unixExecutable) { error in
             guard let error else { return }
@@ -1327,7 +1543,7 @@ extension AppDelegate {
                 let alert = NSAlert()
                 alert.messageText = "Failed to Set Default Terminal"
                 alert.informativeText = """
-                Ghostty could not be set as the default terminal application.
+                Casper could not be set as the default terminal application.
 
                 Error: \(error.localizedDescription)
                 """

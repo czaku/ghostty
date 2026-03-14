@@ -13,10 +13,10 @@ extension ghostty_surface_t: @unchecked @retroactive Sendable {}
 
 extension Ghostty {
     // The user notification category identifier
-    static let userNotificationCategory = "com.czaku.ghostty.userNotification"
+    static let userNotificationCategory = "com.czaku.casper.userNotification"
 
     // The user notification "Show" action
-    static let userNotificationActionShow = "com.czaku.ghostty.userNotification.Show"
+    static let userNotificationActionShow = "com.czaku.casper.userNotification.Show"
 }
 
 // MARK: Build Info
@@ -331,121 +331,121 @@ extension Ghostty {
 
 extension Notification.Name {
     /// Configuration change. If the object is nil then it is app-wide. Otherwise its surface-specific.
-    static let ghosttyConfigDidChange = Notification.Name("com.czaku.ghostty.configDidChange")
+    static let ghosttyConfigDidChange = Notification.Name("com.czaku.casper.configDidChange")
     static let GhosttyConfigChangeKey = ghosttyConfigDidChange.rawValue
 
     /// Color change. Object is the surface changing.
-    static let ghosttyColorDidChange = Notification.Name("com.czaku.ghostty.ghosttyColorDidChange")
+    static let ghosttyColorDidChange = Notification.Name("com.czaku.casper.ghosttyColorDidChange")
     static let GhosttyColorChangeKey = ghosttyColorDidChange.rawValue
 
     /// Goto tab. Has tab index in the userinfo.
-    static let ghosttyMoveTab = Notification.Name("com.czaku.ghostty.moveTab")
+    static let ghosttyMoveTab = Notification.Name("com.czaku.casper.moveTab")
     static let GhosttyMoveTabKey = ghosttyMoveTab.rawValue
 
     /// Close tab
-    static let ghosttyCloseTab = Notification.Name("com.czaku.ghostty.closeTab")
+    static let ghosttyCloseTab = Notification.Name("com.czaku.casper.closeTab")
 
     /// Close other tabs
-    static let ghosttyCloseOtherTabs = Notification.Name("com.czaku.ghostty.closeOtherTabs")
+    static let ghosttyCloseOtherTabs = Notification.Name("com.czaku.casper.closeOtherTabs")
 
     /// Close tabs to the right of the focused tab
-    static let ghosttyCloseTabsOnTheRight = Notification.Name("com.czaku.ghostty.closeTabsOnTheRight")
+    static let ghosttyCloseTabsOnTheRight = Notification.Name("com.czaku.casper.closeTabsOnTheRight")
 
     /// Close window
-    static let ghosttyCloseWindow = Notification.Name("com.czaku.ghostty.closeWindow")
+    static let ghosttyCloseWindow = Notification.Name("com.czaku.casper.closeWindow")
 
     /// Resize the window to a default size.
-    static let ghosttyResetWindowSize = Notification.Name("com.czaku.ghostty.resetWindowSize")
+    static let ghosttyResetWindowSize = Notification.Name("com.czaku.casper.resetWindowSize")
 
     /// Ring the bell
-    static let ghosttyBellDidRing = Notification.Name("com.czaku.ghostty.ghosttyBellDidRing")
+    static let ghosttyBellDidRing = Notification.Name("com.czaku.casper.ghosttyBellDidRing")
 
     /// Readonly mode changed
-    static let ghosttyDidChangeReadonly = Notification.Name("com.czaku.ghostty.didChangeReadonly")
+    static let ghosttyDidChangeReadonly = Notification.Name("com.czaku.casper.didChangeReadonly")
     static let ReadonlyKey = ghosttyDidChangeReadonly.rawValue + ".readonly"
-    static let ghosttyCommandPaletteDidToggle = Notification.Name("com.czaku.ghostty.commandPaletteDidToggle")
+    static let ghosttyCommandPaletteDidToggle = Notification.Name("com.czaku.casper.commandPaletteDidToggle")
 
     /// Toggle maximize of current window
-    static let ghosttyMaximizeDidToggle = Notification.Name("com.czaku.ghostty.maximizeDidToggle")
+    static let ghosttyMaximizeDidToggle = Notification.Name("com.czaku.casper.maximizeDidToggle")
 
     /// Notification sent when scrollbar updates
-    static let ghosttyDidUpdateScrollbar = Notification.Name("com.czaku.ghostty.didUpdateScrollbar")
+    static let ghosttyDidUpdateScrollbar = Notification.Name("com.czaku.casper.didUpdateScrollbar")
     static let ScrollbarKey = ghosttyDidUpdateScrollbar.rawValue + ".scrollbar"
 
     /// Focus the search field
-    static let ghosttySearchFocus = Notification.Name("com.czaku.ghostty.searchFocus")
+    static let ghosttySearchFocus = Notification.Name("com.czaku.casper.searchFocus")
 }
 
 // NOTE: I am moving all of these to Notification.Name extensions over time. This
 // namespace was the old namespace.
 extension Ghostty.Notification {
     /// Used to pass a configuration along when creating a new tab/window/split.
-    static let NewSurfaceConfigKey = "com.czaku.ghostty.newSurfaceConfig"
+    static let NewSurfaceConfigKey = "com.czaku.casper.newSurfaceConfig"
 
     /// Posted when a new split is requested. The sending object will be the surface that had focus. The
     /// userdata has one key "direction" with the direction to split to.
-    static let ghosttyNewSplit = Notification.Name("com.czaku.ghostty.newSplit")
+    static let ghosttyNewSplit = Notification.Name("com.czaku.casper.newSplit")
 
     /// Close the calling surface.
-    static let ghosttyCloseSurface = Notification.Name("com.czaku.ghostty.closeSurface")
+    static let ghosttyCloseSurface = Notification.Name("com.czaku.casper.closeSurface")
 
     /// Focus previous/next split. Has a SplitFocusDirection in the userinfo.
-    static let ghosttyFocusSplit = Notification.Name("com.czaku.ghostty.focusSplit")
+    static let ghosttyFocusSplit = Notification.Name("com.czaku.casper.focusSplit")
     static let SplitDirectionKey = ghosttyFocusSplit.rawValue
 
     /// Goto tab. Has tab index in the userinfo.
-    static let ghosttyGotoTab = Notification.Name("com.czaku.ghostty.gotoTab")
+    static let ghosttyGotoTab = Notification.Name("com.czaku.casper.gotoTab")
     static let GotoTabKey = ghosttyGotoTab.rawValue
 
     /// New tab. Has base surface config requested in userinfo.
-    static let ghosttyNewTab = Notification.Name("com.czaku.ghostty.newTab")
+    static let ghosttyNewTab = Notification.Name("com.czaku.casper.newTab")
 
     /// New window. Has base surface config requested in userinfo.
-    static let ghosttyNewWindow = Notification.Name("com.czaku.ghostty.newWindow")
+    static let ghosttyNewWindow = Notification.Name("com.czaku.casper.newWindow")
 
     /// Present terminal. Bring the surface's window to focus without activating the app.
-    static let ghosttyPresentTerminal = Notification.Name("com.czaku.ghostty.presentTerminal")
+    static let ghosttyPresentTerminal = Notification.Name("com.czaku.casper.presentTerminal")
 
     /// Toggle fullscreen of current window
-    static let ghosttyToggleFullscreen = Notification.Name("com.czaku.ghostty.toggleFullscreen")
+    static let ghosttyToggleFullscreen = Notification.Name("com.czaku.casper.toggleFullscreen")
     static let FullscreenModeKey = ghosttyToggleFullscreen.rawValue
 
     /// Notification sent to toggle split maximize/unmaximize.
-    static let didToggleSplitZoom = Notification.Name("com.czaku.ghostty.didToggleSplitZoom")
+    static let didToggleSplitZoom = Notification.Name("com.czaku.casper.didToggleSplitZoom")
 
     /// Notification
-    static let didReceiveInitialWindowFrame = Notification.Name("com.czaku.ghostty.didReceiveInitialWindowFrame")
-    static let FrameKey = "com.czaku.ghostty.frame"
+    static let didReceiveInitialWindowFrame = Notification.Name("com.czaku.casper.didReceiveInitialWindowFrame")
+    static let FrameKey = "com.czaku.casper.frame"
 
     /// Notification to render the inspector for a surface
-    static let inspectorNeedsDisplay = Notification.Name("com.czaku.ghostty.inspectorNeedsDisplay")
+    static let inspectorNeedsDisplay = Notification.Name("com.czaku.casper.inspectorNeedsDisplay")
 
     /// Notification to show/hide the inspector
-    static let didControlInspector = Notification.Name("com.czaku.ghostty.didControlInspector")
+    static let didControlInspector = Notification.Name("com.czaku.casper.didControlInspector")
 
-    static let confirmClipboard = Notification.Name("com.czaku.ghostty.confirmClipboard")
+    static let confirmClipboard = Notification.Name("com.czaku.casper.confirmClipboard")
     static let ConfirmClipboardStrKey = confirmClipboard.rawValue + ".str"
     static let ConfirmClipboardStateKey = confirmClipboard.rawValue + ".state"
     static let ConfirmClipboardRequestKey = confirmClipboard.rawValue + ".request"
 
     /// Notification sent to the active split view to resize the split.
-    static let didResizeSplit = Notification.Name("com.czaku.ghostty.didResizeSplit")
+    static let didResizeSplit = Notification.Name("com.czaku.casper.didResizeSplit")
     static let ResizeSplitDirectionKey = didResizeSplit.rawValue + ".direction"
     static let ResizeSplitAmountKey = didResizeSplit.rawValue + ".amount"
 
     /// Notification sent to the split root to equalize split sizes
-    static let didEqualizeSplits = Notification.Name("com.czaku.ghostty.didEqualizeSplits")
+    static let didEqualizeSplits = Notification.Name("com.czaku.casper.didEqualizeSplits")
 
     /// Notification that renderer health changed
-    static let didUpdateRendererHealth = Notification.Name("com.czaku.ghostty.didUpdateRendererHealth")
+    static let didUpdateRendererHealth = Notification.Name("com.czaku.casper.didUpdateRendererHealth")
 
     /// Notifications related to key sequences
-    static let didContinueKeySequence = Notification.Name("com.czaku.ghostty.didContinueKeySequence")
-    static let didEndKeySequence = Notification.Name("com.czaku.ghostty.didEndKeySequence")
+    static let didContinueKeySequence = Notification.Name("com.czaku.casper.didContinueKeySequence")
+    static let didEndKeySequence = Notification.Name("com.czaku.casper.didEndKeySequence")
     static let KeySequenceKey = didContinueKeySequence.rawValue + ".key"
 
     /// Notifications related to key tables
-    static let didChangeKeyTable = Notification.Name("com.czaku.ghostty.didChangeKeyTable")
+    static let didChangeKeyTable = Notification.Name("com.czaku.casper.didChangeKeyTable")
     static let KeyTableKey = didChangeKeyTable.rawValue + ".action"
 }
 

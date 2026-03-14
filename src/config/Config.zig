@@ -2248,6 +2248,73 @@ keybind: Keybinds = .{},
 /// The default value is `300` (5 minutes).
 @"session-auto-save-interval": u32 = 300,
 
+/// When pasting from the clipboard, automatically strip markdown code fences
+/// if the clipboard content is a single fenced code block (e.g. content copied
+/// from Claude Code or ChatGPT). Only the inner content is pasted.
+///
+/// For example, pasting:
+///   ```bash
+///   echo hello
+///   ```
+/// becomes:
+///   echo hello
+///
+/// This is currently only supported on macOS. Setting this on other
+/// platforms has no effect.
+///
+/// The default value is `true`.
+@"strip-code-fences": bool = true,
+
+/// The editor to open when using the file:line click-to-open feature (⌘+click
+/// on a path like `src/main.rs:42`). Supported values:
+///
+///   * `cursor`  - Cursor (cursor://file/path:line)
+///   * `code`    - Visual Studio Code (vscode://file/path:line)
+///   * `zed`     - Zed (zed://file/path:line)
+///   * `nvim`    - Neovim in a new terminal (nvim +line path)
+///   * `vim`     - Vim in a new terminal (vim +line path)
+///   * `default` - Use the system default app for the file type
+///
+/// This is currently only supported on macOS. The default is `cursor`.
+@"open-in-editor": []const u8 = "cursor",
+
+/// Comma-separated list of process names that are automatically re-launched
+/// when a session is restored. Supports exact names and `prefix-*` glob patterns.
+///
+/// Only commands on this list are replayed. Everything else restores the cwd
+/// with a fresh shell prompt.
+///
+/// The default value is `claude,claude-*,nvim,vim,lazygit,hx`.
+@"session-replay-commands": []const u8 = "claude,claude-*,nvim,vim,lazygit,hx",
+
+/// Maximum number of scrollback lines to capture per surface when saving a session.
+/// Higher values give more context on restore but increase session file size.
+///
+/// The default value is `10000`.
+@"session-max-scrollback": u32 = 10000,
+
+/// Number of days to keep saved session files before they are pruned.
+/// At least one session is always kept regardless of this setting.
+///
+/// The default value is `30`.
+@"session-retention-days": u32 = 30,
+
+/// The AI provider command used by the "Ask AI" feature (Edit > Ask AI, ⌘⇧A).
+/// The selected terminal text is passed as the first argument to this command.
+///
+/// Built-in providers: `claude` (default), `omnai`, `openai`.
+/// Any script on $PATH is also accepted.
+///
+/// The default value is `claude`.
+@"ask-ai-command": []const u8 = "claude",
+
+/// The name of the active layout to restore on launch, if any.
+/// Leave empty to open a default window. Set to a layout name (without .json)
+/// to restore that layout automatically.
+///
+/// The default value is `""` (no auto-restore).
+@"startup-layout": []const u8 = "",
+
 /// Resize the window in discrete increments of the focused surface's cell size.
 /// If this is disabled, surfaces are resized in pixel increments. Currently
 /// only supported on macOS.

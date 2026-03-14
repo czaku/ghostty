@@ -12,7 +12,43 @@ struct SessionData: Codable {
 
 struct SessionWindow: Codable {
     let frame: SessionFrame
+    /// Full split-tree geometry saved since version 2.
+    /// Nil on sessions saved by older versions — fall back to `surfaces`.
+    let splitTree: SessionSplitNode?
+    /// Flat surface list. Kept for backward-compat decoding of v1 sessions.
     let surfaces: [SessionSurface]
+
+    init(frame: SessionFrame, splitTree: SessionSplitNode, surfaces: [SessionSurface]) {
+        self.frame = frame
+        self.splitTree = splitTree
+        self.surfaces = surfaces
+    }
+
+    /// Convenience init for v1 sessions and tests — no split tree.
+    init(frame: SessionFrame, surfaces: [SessionSurface]) {
+        self.frame = frame
+        self.splitTree = nil
+        self.surfaces = surfaces
+    }
+}
+
+/// A codable mirror of SplitTree.Node that stores SessionSurface at the leaves.
+indirect enum SessionSplitNode: Codable {
+    case leaf(SessionSurface)
+    case split(direction: SplitDirection, ratio: Double, left: SessionSplitNode, right: SessionSplitNode)
+
+    enum SplitDirection: String, Codable {
+        case horizontal
+        case vertical
+    }
+
+    /// All leaf surfaces in traversal order.
+    var surfaces: [SessionSurface] {
+        switch self {
+        case .leaf(let s): return [s]
+        case .split(_, _, let l, let r): return l.surfaces + r.surfaces
+        }
+    }
 }
 
 struct SessionFrame: Codable {
@@ -30,13 +66,25 @@ struct SessionSurface: Codable {
     /// Name of the foreground process at save time if it's on the replay whitelist
     /// (e.g. "claude", "claude-edge", "nvim"). Nil means restore to a bare prompt.
     let foregroundProcess: String?
+    /// Sweech profile that was active at save time, if the process is a Sweech-managed
+    /// wrapper (e.g. claude-pole). Used to display provider/model info and to set
+    /// CLAUDE_CONFIG_DIR on restore.
+    let sweechProfile: SweechProfile?
 
-    init(uuid: String, cwd: String?, title: String, scrollback: String, foregroundProcess: String? = nil) {
+    init(
+        uuid: String,
+        cwd: String?,
+        title: String,
+        scrollback: String,
+        foregroundProcess: String? = nil,
+        sweechProfile: SweechProfile? = nil
+    ) {
         self.uuid = uuid
         self.cwd = cwd
         self.title = title
         self.scrollback = scrollback
         self.foregroundProcess = foregroundProcess
+        self.sweechProfile = sweechProfile
     }
 }
 
@@ -46,9 +94,8 @@ final class SessionManager {
     static let shared = SessionManager()
     static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "SessionManager")
 
-    private static let maxScrollbackLines = 10_000
-    /// Sessions older than this are pruned when a new session is saved.
-    private static let sessionRetentionDays: Double = 30
+    /// Injected from the live Ghostty config so session limits are configurable.
+    var config: Ghostty.Config? = nil
 
     private var periodicSaveTimer: Timer?
 
@@ -92,15 +139,22 @@ final class SessionManager {
 
     // MARK: - Save
 
-    func saveSession(controllers: [TerminalController]) {
+    func saveSession(controllers: [TerminalController], named name: String? = nil) {
         let windows: [SessionWindow] = controllers.compactMap { sessionWindow(from: $0) }
         guard !windows.isEmpty else { return }
 
         let data = SessionData(version: 1, savedAt: Date(), windows: windows)
         do {
             try FileManager.default.createDirectory(at: sessionsURL, withIntermediateDirectories: true)
-            let filename = ISO8601DateFormatter().string(from: Date())
-                .replacingOccurrences(of: ":", with: "-") + ".json"
+            let filename: String
+            if let name, !name.isEmpty {
+                // Sanitise: replace path-unsafe chars with dashes
+                let safe = name.components(separatedBy: CharacterSet.alphanumerics.union(.init(charactersIn: "-_")).inverted).joined(separator: "-")
+                filename = safe + ".json"
+            } else {
+                filename = ISO8601DateFormatter().string(from: Date())
+                    .replacingOccurrences(of: ":", with: "-") + ".json"
+            }
             let url = sessionsURL.appendingPathComponent(filename)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
@@ -116,7 +170,8 @@ final class SessionManager {
 
     /// Deletes session files older than `sessionRetentionDays`, keeping at least one.
     private func pruneOldSessions() {
-        let cutoff = Date().addingTimeInterval(-Self.sessionRetentionDays * 86400)
+        let retentionDays = config?.sessionRetentionDays ?? 30
+        let cutoff = Date().addingTimeInterval(-retentionDays * 86400)
         let all = listSessions()
         guard all.count > 1 else { return }
         for entry in all.dropLast(1) {
@@ -216,33 +271,71 @@ final class SessionManager {
     }
 
     private func restoreWindow(_ windowData: SessionWindow, ghostty: Ghostty.App) {
-        guard let firstSurface = windowData.surfaces.first else { return }
+        let frame = windowData.frame
+        let origin = NSPoint(x: frame.x, y: frame.y)
 
-        var config = Ghostty.SurfaceConfiguration()
-        config.workingDirectory = firstSurface.cwd
-        config.initialInput = initialInput(for: firstSurface)
+        if let splitNode = windowData.splitTree,
+           let tree = buildSplitTree(from: splitNode, ghostty: ghostty) {
+            // Full split-geometry restore: build the tree and hand it directly to the controller.
+            let controller = TerminalController.newWindow(ghostty, tree: tree, position: origin)
+            if let window = controller.window {
+                let rect = NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+                window.setFrame(rect, display: true)
+            }
+        } else {
+            // Fallback for v1 sessions (no splitTree): open first surface as window,
+            // rest as tabs.
+            guard let firstSurface = windowData.surfaces.first else { return }
+            var config = Ghostty.SurfaceConfiguration()
+            config.workingDirectory = firstSurface.cwd
+            config.initialInput = initialInput(for: firstSurface)
+            let controller = TerminalController.newWindow(ghostty, withBaseConfig: config)
 
-        let controller = TerminalController.newWindow(ghostty, withBaseConfig: config)
-
-        // For additional surfaces (splits), open as new tabs
-        for surface in windowData.surfaces.dropFirst() {
-            var tabConfig = Ghostty.SurfaceConfiguration()
-            tabConfig.workingDirectory = surface.cwd
-            tabConfig.initialInput = initialInput(for: surface)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                NotificationCenter.default.post(
-                    name: Ghostty.Notification.ghosttyNewTab,
-                    object: controller.focusedSurface,
-                    userInfo: [Ghostty.Notification.NewSurfaceConfigKey: tabConfig]
-                )
+            for surface in windowData.surfaces.dropFirst() {
+                var tabConfig = Ghostty.SurfaceConfiguration()
+                tabConfig.workingDirectory = surface.cwd
+                tabConfig.initialInput = initialInput(for: surface)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    NotificationCenter.default.post(
+                        name: Ghostty.Notification.ghosttyNewTab,
+                        object: controller.focusedSurface,
+                        userInfo: [Ghostty.Notification.NewSurfaceConfigKey: tabConfig]
+                    )
+                }
+            }
+            if let window = controller.window {
+                let rect = NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+                window.setFrame(rect, display: true)
             }
         }
+    }
 
-        // Restore window frame
-        if let window = controller.window {
-            let frame = windowData.frame
-            let rect = NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
-            window.setFrame(rect, display: true)
+    /// Recursively builds a SplitTree<SurfaceView> from the saved session node.
+    private func buildSplitTree(
+        from node: SessionSplitNode,
+        ghostty: Ghostty.App
+    ) -> SplitTree<Ghostty.SurfaceView>? {
+        guard let treeNode = buildSplitNode(from: node, ghostty: ghostty) else { return nil }
+        return SplitTree(root: treeNode, zoomed: nil)
+    }
+
+    private func buildSplitNode(
+        from node: SessionSplitNode,
+        ghostty: Ghostty.App
+    ) -> SplitTree<Ghostty.SurfaceView>.Node? {
+        guard let ghosttyApp = ghostty.app else { return nil }
+        switch node {
+        case .leaf(let surface):
+            var config = Ghostty.SurfaceConfiguration()
+            config.workingDirectory = surface.cwd
+            config.initialInput = initialInput(for: surface)
+            let view = Ghostty.SurfaceView(ghosttyApp, baseConfig: config)
+            return .leaf(view: view)
+        case .split(let direction, let ratio, let left, let right):
+            guard let leftNode = buildSplitNode(from: left, ghostty: ghostty),
+                  let rightNode = buildSplitNode(from: right, ghostty: ghostty) else { return nil }
+            let dir: SplitTree<Ghostty.SurfaceView>.Direction = direction == .horizontal ? .horizontal : .vertical
+            return .split(.init(direction: dir, ratio: ratio, left: leftNode, right: rightNode))
         }
     }
 
@@ -252,9 +345,11 @@ final class SessionManager {
     /// 1. If there is scrollback, replay it visually via `cat tmpfile; rm tmpfile`.
     /// 2. If a replayable foreground process was saved, append its restore command.
     ///
-    /// For `claude`, the restore command is `claude --continue` which resumes the
-    /// last Claude Code conversation in that directory. For wrappers like
-    /// `claude-edge`, the script is re-run as-is.
+    /// For `claude`, the restore command is `claude --continue`.
+    /// For Sweech-managed wrappers (e.g. `claude-pole`), the wrapper script is re-run
+    /// as-is — it already injects `CLAUDE_CONFIG_DIR` itself.
+    /// For bare `claude` that was run inside a Sweech config dir, we set
+    /// `CLAUDE_CONFIG_DIR` explicitly so the conversation context is preserved.
     private func initialInput(for surface: SessionSurface) -> String? {
         var parts: [String] = []
 
@@ -263,8 +358,14 @@ final class SessionManager {
         }
 
         if let proc = surface.foregroundProcess {
-            // Append the replay command followed by a newline so it runs automatically.
-            parts.append(ProcessDetector.restoreCommand(for: proc) + "\n")
+            var cmd = ProcessDetector.restoreCommand(for: proc)
+            // For bare `claude` with a Sweech profile saved, re-inject CLAUDE_CONFIG_DIR.
+            // (Sweech wrapper scripts inject this themselves; bare `claude` does not.)
+            if proc == "claude", let configDir = surface.sweechProfile.flatMap({ SweechReader.configDir(forCommand: $0.commandName) }) {
+                let quoted = Ghostty.Shell.quote(configDir)
+                cmd = "CLAUDE_CONFIG_DIR=\(quoted) \(cmd)"
+            }
+            parts.append(cmd + "\n")
         }
 
         return parts.isEmpty ? nil : parts.joined()
@@ -291,20 +392,38 @@ final class SessionManager {
         guard let window = controller.window else { return nil }
         let frame = window.frame
         let sessionFrame = SessionFrame(x: frame.origin.x, y: frame.origin.y, width: frame.width, height: frame.height)
-        let surfaces = controller.surfaceTree.compactMap { sessionSurface(from: $0) }
-        guard !surfaces.isEmpty else { return nil }
-        return SessionWindow(frame: sessionFrame, surfaces: surfaces)
+        guard let root = controller.surfaceTree.root,
+              let splitNode = sessionSplitNode(from: root) else { return nil }
+        let surfaces = splitNode.surfaces
+        return SessionWindow(frame: sessionFrame, splitTree: splitNode, surfaces: surfaces)
+    }
+
+    private func sessionSplitNode(from node: SplitTree<Ghostty.SurfaceView>.Node) -> SessionSplitNode? {
+        switch node {
+        case .leaf(let view):
+            guard let surface = sessionSurface(from: view) else { return nil }
+            return .leaf(surface)
+        case .split(let split):
+            guard let left = sessionSplitNode(from: split.left),
+                  let right = sessionSplitNode(from: split.right) else { return nil }
+            let dir: SessionSplitNode.SplitDirection = split.direction == .horizontal ? .horizontal : .vertical
+            return .split(direction: dir, ratio: split.ratio, left: left, right: right)
+        }
     }
 
     private func sessionSurface(from view: Ghostty.SurfaceView) -> SessionSurface? {
         let scrollback = readScrollback(from: view)
-        let foreground = view.pwd.flatMap { ProcessDetector.replayableProcess(inDirectory: $0) }
+        let patterns = config?.sessionReplayCommands ?? ProcessDetector.replayablePatterns
+        let foreground = view.pwd.flatMap { ProcessDetector.replayableProcess(inDirectory: $0, patterns: patterns) }
+        // If the process is a Sweech-managed wrapper, enrich with profile metadata.
+        let sweech = foreground.flatMap { SweechReader.profile(forCommand: $0) }
         return SessionSurface(
             uuid: view.id.uuidString,
             cwd: view.pwd,
             title: view.title,
             scrollback: scrollback,
-            foregroundProcess: foreground
+            foregroundProcess: foreground,
+            sweechProfile: sweech
         )
     }
 
@@ -326,10 +445,11 @@ final class SessionManager {
         guard ghostty_surface_read_text(surface, sel, &text) else { return "" }
         defer { ghostty_surface_free_text(surface, &text) }
         let full = String(cString: text.text)
-        // Cap to maxScrollbackLines to avoid enormous files
+        // Cap scrollback to the configured limit to avoid enormous files
+        let maxLines = config?.sessionMaxScrollback ?? 10_000
         let lines = full.components(separatedBy: "\n")
-        if lines.count > Self.maxScrollbackLines {
-            return lines.suffix(Self.maxScrollbackLines).joined(separator: "\n")
+        if lines.count > maxLines {
+            return lines.suffix(maxLines).joined(separator: "\n")
         }
         return full
     }

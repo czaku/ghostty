@@ -220,8 +220,8 @@ extension Ghostty {
         }
 
         var sessionAutoSave: Bool {
-            guard let config = self.config else { return true }
-            var v = true
+            guard let config = self.config else { return false }
+            var v = false
             let key = "session-auto-save"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
             return v
@@ -233,6 +233,70 @@ extension Ghostty {
             let key = "session-auto-save-interval"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
             return max(30, v)
+        }
+
+        var stripCodeFences: Bool {
+            guard let config = self.config else { return true }
+            var v = true
+            let key = "strip-code-fences"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
+
+        var openInEditor: String {
+            guard let config = self.config else { return "cursor" }
+            var v: UnsafePointer<Int8>?
+            let key = "open-in-editor"
+            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))),
+                  let ptr = v else { return "cursor" }
+            return String(cString: ptr)
+        }
+
+        /// Comma-separated replay commands string split into individual patterns.
+        var sessionReplayCommands: [String] {
+            guard let config = self.config else { return ["claude", "claude-*", "nvim", "vim", "lazygit", "hx"] }
+            var v: UnsafePointer<Int8>?
+            let key = "session-replay-commands"
+            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))),
+                  let ptr = v else { return ["claude", "claude-*", "nvim", "vim", "lazygit", "hx"] }
+            return String(cString: ptr)
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        }
+
+        var sessionMaxScrollback: Int {
+            guard let config = self.config else { return 10_000 }
+            var v: UInt32 = 10_000
+            let key = "session-max-scrollback"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return max(100, Int(v))
+        }
+
+        var sessionRetentionDays: Double {
+            guard let config = self.config else { return 30 }
+            var v: UInt32 = 30
+            let key = "session-retention-days"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return max(1, Double(v))
+        }
+
+        var askAICommand: String {
+            guard let config = self.config else { return "claude" }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "ask-ai-command"
+            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))),
+                  let ptr = v else { return "claude" }
+            return String(cString: ptr)
+        }
+
+        var startupLayout: String {
+            guard let config = self.config else { return "" }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "startup-layout"
+            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))),
+                  let ptr = v else { return "" }
+            return String(cString: ptr)
         }
 
         var windowPositionX: Int16? {

@@ -11,7 +11,7 @@ const log = std.log.scoped(.config);
 pub fn defaultXdgPath(alloc: Allocator) ![]const u8 {
     return try internal_os.xdg.config(
         alloc,
-        .{ .subdir = "casper/config.ghostty" },
+        .{ .subdir = "casper/config.casper" },
     );
 }
 
@@ -52,7 +52,7 @@ pub fn preferredXdgPath(alloc: Allocator) ![]const u8 {
 /// Default path for the macOS Application Support configuration file.
 /// Returned value must be freed by the caller.
 pub fn defaultAppSupportPath(alloc: Allocator) ![]const u8 {
-    return try internal_os.macos.appSupportDir(alloc, "config.ghostty");
+    return try internal_os.macos.appSupportDir(alloc, "config.casper");
 }
 
 /// Ghostty <1.3.0 default path for the macOS Application Support

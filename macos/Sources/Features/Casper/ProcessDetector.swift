@@ -32,10 +32,13 @@ enum ProcessDetector {
     ///
     /// Matches by cwd so multiple Claude sessions in different directories are
     /// each correctly identified.
-    static func replayableProcess(inDirectory cwd: String) -> String? {
+    static func replayableProcess(
+        inDirectory cwd: String,
+        patterns: [String] = replayablePatterns
+    ) -> String? {
         for pid in allPids() {
             guard let name = processName(for: pid),
-                  matches(name, patterns: replayablePatterns),
+                  matches(name, patterns: patterns),
                   let processCwd = workingDirectory(for: pid),
                   processCwd == cwd
             else { continue }

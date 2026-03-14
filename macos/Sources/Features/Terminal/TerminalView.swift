@@ -75,9 +75,11 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 VStack(spacing: 0) {
                     // If we're running in debug mode we show a warning so that users
                     // know that performance will be degraded.
+                    #if DEBUG
                     if Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE {
                         DebugBuildWarningView()
                     }
+                    #endif
 
                     TerminalSplitTreeView(
                         tree: viewModel.surfaceTree,
@@ -154,11 +156,11 @@ struct DebugBuildWarningView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundColor(.yellow)
 
-            Text("You're running a debug build of Ghostty! Performance will be degraded.")
+            Text("You're running a debug build of Casper! Performance will be degraded.")
                 .padding(.all, 8)
                 .popover(isPresented: $isPopover, arrowEdge: .bottom) {
                     Text("""
-                    Debug builds of Ghostty are very slow and you may experience
+                    Debug builds of Casper are very slow and you may experience
                     performance problems. Debug builds are only recommended during
                     development.
                     """)

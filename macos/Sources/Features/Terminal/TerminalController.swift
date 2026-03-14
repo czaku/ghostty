@@ -50,6 +50,75 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// For example, terminals executing custom scripts are not restorable.
     private var restorable: Bool = true
 
+    /// When true, key events typed into any pane are mirrored to all other panes in this window.
+    var broadcastMode: Bool = false {
+        didSet { updateBroadcastIndicator() }
+    }
+
+    private func updateBroadcastIndicator() {
+        window?.subtitle = broadcastMode ? "Broadcasting" : ""
+    }
+
+    /// The inferred activity state of the focused pane, updated by PaneActivityMonitor.
+    var activityState: PaneActivity = .idle {
+        didSet {
+            guard activityState != oldValue else { return }
+            updateActivityVisuals()
+        }
+    }
+
+    /// The visual theme for this window. Defaults to the app-wide default from config.
+    var casperTheme: CasperTheme = .wraith {
+        didSet {
+            guard casperTheme != oldValue else { return }
+            applyTheme()
+        }
+    }
+
+    /// A derived title hint from Claude Code task text or git context,
+    /// set by PaneActivityMonitor. Shown in the window subtitle.
+    var casperTitleHint: String? {
+        didSet {
+            guard casperTitleHint != oldValue else { return }
+            updateActivityVisuals()
+        }
+    }
+
+    private func updateActivityVisuals() {
+        guard let window else { return }
+
+        // 1. Colored border overlay on top of the Metal surface
+        let border = ActivityBorderView.install(in: window)
+        border.activity = activityState
+        border.themeAccent = casperTheme.accentColor
+
+        // 2. Session name banner — only when there is something meaningful to show.
+        //    Idle with no custom hint would just duplicate the native title bar.
+        let bannerText = casperTitleHint ?? (broadcastMode ? "Broadcasting" : nil)
+        if let bannerText {
+            let banner = SessionNameBanner.install(in: window)
+            banner.setSessionName(bannerText, activity: activityState)
+        } else if activityState != .idle {
+            let banner = SessionNameBanner.install(in: window)
+            banner.setSessionName(window.title, activity: activityState)
+        } else {
+            SessionNameBanner.remove(from: window)
+        }
+
+        // 3. Floating action bar
+        _ = TerminalActionBar.install(in: window, controller: self)
+    }
+
+    func applyTheme() {
+        guard let window else { return }
+
+        // Window tint overlay (installed before ActivityBorderView so it stays beneath it)
+        CasperThemeTintView.install(in: window, color: casperTheme.tintColor)
+
+        // Refresh activity visuals with new accent
+        updateActivityVisuals()
+    }
+
     /// The configuration derived from the Ghostty config so we don't need to rely on references.
     private(set) var derivedConfig: DerivedConfig
 
@@ -1015,6 +1084,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         super.windowDidLoad()
         guard let window else { return }
 
+        // Apply the default Casper theme to this window.
+        let savedDefault = UserDefaults.standard.string(forKey: "casperDefaultTheme") ?? "wraith"
+        casperTheme = CasperTheme(rawValue: savedDefault) ?? .wraith
+
         // I copy this because we may change the source in the future but also because
         // I regularly audit our codebase for "ghostty.config" access because generally
         // you shouldn't use it. Its safe in this case because for a new window we should
@@ -1339,6 +1412,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     @IBAction func toggleTerminalInspector(_ sender: Any?) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.toggleTerminalInspector(surface: surface)
+    }
+
+    @IBAction func toggleBroadcastMode(_ sender: Any?) {
+        broadcastMode.toggle()
     }
 
     // MARK: - TerminalViewDelegate
